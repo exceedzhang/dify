@@ -372,13 +372,21 @@ Node 24.22.1;仍为 Debian 12,apt `chromium` 版本不受基座升级影响):
 10. **E2B 内存全局翻倍**(P0 已实施):模板固定资源、`AsyncSandbox.create` 不按次传内存,
 `DEFAULT_MEMORY_MB` 1024→2048 影响**所有** E2B 沙箱(2× 成本)。若成本敏感,回退选项 =
 保持 1024 + browser 开启的部署单独 `--memory-mb 2048` 同步模板(两模板名区分)。
-11. **browser-use 与 dify-agent 的 LLM SDK 硬钉冲突**(P1 已解决):browser-use 0.13.6–0.13.9 硬钉
-`anthropic==0.76.0`/`google-auth==2.48.0`/`google-genai==1.65.0`/`openai==2.26.0`,与
-`pydantic-ai-slim[anthropic,google,openai]==2.31.0` 的最低版本(anthropic≥0.108/google-genai≥1.70/
-openai≥2.45)直接矛盾;0.13.10+ 又要求 pydantic 2.13,超出 dify-agent 的 `pydantic<2.13`。
+11. **browser-use 与 dify-agent 的 LLM SDK 硬钉冲突**(P1 已解决;2026-11-01 按 2.53.0 基座重新分析并修复):
+browser-use 0.13.6–0.13.9 硬钉 `anthropic==0.76.0`/`google-auth==2.48.0`/`google-genai==1.65.0`/
+`openai==2.26.0`/`pillow==12.x`,与 `pydantic-ai-slim[anthropic,google,openai]==2.53.0` 的 extras 下限
+(anthropic≥1.9.0/google-genai≥2.25.0/openai≥3.19.0)直接矛盾,且 `google-auth==2.48.0` 与
+google-genai 2.x 的 `google-auth>=2.56.0` 矛盾、`pillow==12.x` 与 server extra 的 `pillow>=13.0.0`
+(CVE 下限,#44871)矛盾;0.13.10–0.13.14 又硬钉 `pydantic==2.13.5`,超出 dify-agent 的
+`pydantic<2.13`——不存在同时兼容 pillow 13 与 pydantic 2.12 的 0.13.x 版本,override 是唯一解。
 解决:server extra 钉 `browser-use>=0.13.6,<0.13.10` + `[tool.uv] override-dependencies` 抬升
-四个 SDK 到 pydantic-ai-slim 要求的下限。**安全性依据**:Dify 恒传宿主 Pydantic AI 模型
-(`llm=ctx.model`),browser-use 从不实例化自己的 provider client,被 override 的 SDK 仅存
-import 面;实测 `browser_use` 全量 import + `BrowserUse` 构造 + `get_toolset()`/`get_instructions()`
-在同步后环境全部通过。残余风险 = 未来 browser-use 在我们会走的代码路径(CDP/浏览器,不涉 LLM SDK)
-用到旧 SDK API;版本范围 `<0.13.10` 限制漂移。
+五个包到环境真实下限(`anthropic>=1.9.0`、`google-auth>=2.56.0`、`google-genai>=2.25.0`、
+`openai>=3.19.0`、`pillow>=13.0.0`,另保留 `filelock==4.2.1`)。**安全性依据**:Dify 恒传宿主
+Pydantic AI 模型(`llm=ctx.model`),browser-use 从不实例化自己的 provider client,被 override 的
+SDK 仅存 import 面;Pillow 只用稳定图像 API。同步后环境复验:`browser_use` 全量 import(107 个
+子模块)+ `BrowserUse` 构造 + `get_toolset()`/`get_instructions()` 全部通过,1142 项单测全绿。
+残余风险 = 未来 browser-use 在我们会走的代码路径(CDP/浏览器,不涉 LLM SDK)用到旧 SDK API;
+版本范围 `<0.13.10` 限制漂移。**教训**:override 是解法的一部分——pyproject 漏掉 override(或残留
+旧基座的 `pydantic-ai-slim==2.31.0` 钉)都会使 server extra 不可解析;`tests/local/test_packaging.py`
+已加 override 列表回归断言,`uv.lock` 必须经 `uv lock` 再生成(手改/手合并会产生重复 `[manifest]`
+或缺包条目,`uv lock --check` 可捕获)。

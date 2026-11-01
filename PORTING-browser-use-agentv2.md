@@ -18,16 +18,23 @@
 
 | 组件 | 版本 | 说明 |
 |---|---|---|
-| pydantic-ai-slim | `==2.31.0` | dify-agent 主依赖,Agent/Model 契约来源 |
+| pydantic-ai-slim | `==2.53.0` | dify-agent 主依赖,Agent/Model 契约来源(harness 0.20.x 要求 `>=2.28.0`) |
 | pydantic-ai-harness | `>=0.20.0,<0.21.0` | `BrowserUse` capability 提供方;server extra 拉 `[browser-use]` |
-| browser-use | `>=0.13.6,<0.13.10` | 0.13.10+ 要求 pydantic 2.13,与 dify-agent `pydantic<2.13` 冲突 |
-| pydantic | `<2.13` | 硬约束,见上 |
+| browser-use | `>=0.13.6,<0.13.10` | 0.13.10–0.13.14 硬钉 `pydantic==2.13.5`,与 dify-agent `pydantic<2.13` 冲突 |
+| pydantic | `>=2.12.5,<2.13` | 硬约束,见上 |
 | Python | 3.13 | agent_backend 与 sandbox 镜像均 3.13 |
 | sandbox 基座 | `python:3.13-slim-bookworm`(Debian 12) | apt `chromium` ≈ 156.x |
 | shellctl | 带 `port_entrypoint`/lease 协议的当前版 | `RuntimeLease` 协议必须可加方法 |
 | Landlock | Linux ≥5.13,fail-closed(#44152 语义) | 策略拒绝 `/dev/shm`、`/dev/dri`,见 §4.1 |
 
-**依赖冲突与解法(必做)**:browser-use 0.13.6–0.13.9 硬钉 `anthropic==0.76.0`/`google-auth==2.48.0`/`google-genai==1.65.0`/`openai==2.26.0`,与 `pydantic-ai-slim[anthropic,google,openai]` 的下限直接矛盾。因 Dify 恒传宿主 Pydantic AI 模型(`llm=ctx.model`),browser-use **从不实例化自己的 provider client**,被钉 SDK 仅存 import 面——用 uv 解决:
+**依赖冲突与解法(必做)**:browser-use 0.13.6–0.13.9 硬钉 `anthropic==0.76.0`/`google-auth==2.48.0`/
+`google-genai==1.65.0`/`openai==2.26.0`/`pillow==12.x`,与 `pydantic-ai-slim[anthropic,google,openai]==2.53.0`
+的 extras 下限(anthropic≥1.9.0/google-genai≥2.25.0/openai≥3.19.0)直接矛盾,且 `google-auth==2.48.0`
+与 google-genai 2.x 的 `google-auth>=2.56.0` 矛盾、`pillow==12.x` 与 server extra 的 `pillow>=13.0.0`
+(CVE 下限)矛盾。0.13.10–0.13.14 又硬钉 `pydantic==2.13.5`——**不存在**同时兼容 pillow 13 与
+pydantic 2.12 的 0.13.x 版本,override 是唯一解。因 Dify 恒传宿主 Pydantic AI 模型
+(`llm=ctx.model`),browser-use **从不实例化自己的 provider client**,被钉 SDK 仅存 import 面;
+Pillow 只用稳定图像 API——用 uv 解决:
 
 ```toml
 # dify-agent/pyproject.toml
@@ -35,18 +42,26 @@
 server = [
   "pydantic-ai-harness[browser-use]>=0.20.0,<0.21.0",
   "browser-use>=0.13.6,<0.13.10",
-  "pydantic-ai-slim[anthropic,google,openai]==2.31.0",
+  "pydantic-ai-slim[anthropic,google,openai]==2.53.0",
+  "pillow>=13.0.0,<14",
   # ...
 ]
 
 [tool.uv]
 override-dependencies = [
-  # 把四个 SDK 抬到 pydantic-ai-slim 要求的下限
-  "anthropic>=0.108", "google-auth>=2.48", "google-genai>=1.70", "openai>=2.45",
+  # 把硬钉抬到环境真实下限:anthropic/google-genai/openai 取 pydantic-ai-slim extras 下限,
+  # google-auth 取 google-genai 2.x 下限,pillow 取 CVE 下限
+  "anthropic>=1.9.0", "google-auth>=2.56.0", "google-genai>=2.25.0",
+  "openai>=3.19.0", "pillow>=13.0.0",
 ]
 ```
 
-验收:`browser_use` 全量 import + `BrowserUse` 构造 + `get_toolset()`/`get_instructions()` 在锁定环境通过。
+override 必须**逐个**对应一个实际冲突的硬钉,下限必须来自环境里真实的依赖声明(升级 pydantic-ai-slim
+后需按新 extras 元数据重算)。`uv.lock` 必须经 `uv lock` 再生成并以 `uv lock --check` 验证——手改/手合并
+会产生重复 `[manifest]` 或缺包条目。在 `tests/local/test_packaging.py` 里对 override 列表加回归断言。
+
+验收:锁定环境 `browser_use` 全量 import(107 个子模块)+ `BrowserUse` 构造 +
+`get_toolset()`/`get_instructions()` 通过,单测全绿。
 
 ## 3. 总体架构
 
