@@ -28,6 +28,7 @@ from dify_agent.runtime_backend.errors import (
     BindingLostError,
     HomeSnapshotCreateError,
     HomeSnapshotTooLargeError,
+    PortEntrypointUnsupportedError,
     SharedWorkspaceUnsupportedError,
     WorkspacePreservationUnsupportedError,
 )
@@ -36,6 +37,7 @@ from dify_agent.runtime_backend.protocols import (
     ExecutionBindingCreateSpec,
     ExecutionBindingDestroySpec,
     HomeSnapshotCreateSpec,
+    PortEntrypoint,
     RuntimeLayout,
     RuntimeLease,
 )
@@ -358,6 +360,12 @@ class EnterpriseRuntimeLease:
     @property
     def commands(self) -> ShellCommandProtocol:
         return self.data_plane.commands
+
+    def port_entrypoint(self, port: int) -> PortEntrypoint:
+        # The Gateway only proxies shellctl; it exposes no arbitrary
+        # sandbox-port route, so port exposure is unavailable rather than
+        # guessed.
+        raise PortEntrypointUnsupportedError("Enterprise RuntimeLease cannot expose sandbox ports")
 
 
 def _is_missing_sandbox(exc: ShellProviderError) -> bool:

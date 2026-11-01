@@ -131,6 +131,7 @@ def test_dify_config() -> None:
     assert config.DEPLOYMENT_EDITION is DeploymentEdition.COMMUNITY
     assert config.API_COMPRESSION_ENABLED is False
     assert config.AGENT_SHELL_ENABLED is True
+    assert config.AGENT_BROWSER_ENABLED is False
     assert config.SENTRY_TRACES_SAMPLE_RATE == 1.0
     assert config.TEMPLATE_TRANSFORM_MAX_LENGTH == 400_000
     assert config.APP_MAX_EXECUTION_TIME == 3600
