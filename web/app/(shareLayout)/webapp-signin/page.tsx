@@ -3,6 +3,7 @@ import { useSuspenseQuery } from '@tanstack/react-query'
 import * as React from 'react'
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
+import QrLoginPanel from '@/app/(shareLayout)/components/qr-login-panel'
 import AppUnavailable from '@/app/components/base/app-unavailable'
 import { LoadingPlaceholder } from '@/app/components/base/loading-placeholder'
 import { useWebAppStore } from '@/context/web-app-context'
@@ -28,6 +29,7 @@ function WebSSOForm() {
   const webAppAccessMode = useWebAppStore((s) => s.webAppAccessMode)
   const searchParams = useSearchParams()
   const router = useRouter()
+  const shareCode = resolveWebAppAddress()?.code
 
   const redirectUrl = searchParams.get('redirect_url')
   const currentOrigin = useSyncExternalStore(subscribeToOrigin, getClientOrigin, getServerOrigin)
@@ -50,6 +52,10 @@ function WebSSOForm() {
     const url = getSigninUrl()
     router.replace(url)
   }, [getSigninUrl, router])
+
+  const handleQrLoggedIn = useCallback(() => {
+    window.location.href = loginRedirect?.target.href ?? `${basePath}/agent`
+  }, [loginRedirect])
 
   if (!loginRedirect) {
     return (
@@ -74,8 +80,9 @@ function WebSSOForm() {
       webAppAccessMode === AccessMode.SPECIFIC_GROUPS_MEMBERS)
   ) {
     return (
-      <div className="w-full max-w-100">
+      <div className="flex w-full max-w-100 flex-col gap-4">
         <NormalForm />
+        {shareCode && <QrLoginPanel appCode={shareCode} onLoggedIn={handleQrLoggedIn} />}
       </div>
     )
   }

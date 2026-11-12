@@ -7120,6 +7120,14 @@
       "count": 4
     }
   },
+  "web/service/qr-login.ts": {
+    "no-restricted-imports": {
+      "count": 1
+    },
+    "typescript/no-deprecated": {
+      "count": 3
+    }
+  },
   "web/service/refresh-token.ts": {
     "no-restricted-properties": {
       "count": 8

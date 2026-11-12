@@ -185,6 +185,7 @@ from .provider import (
     TenantDefaultModel,
     TenantPreferredModelProvider,
 )
+from .qr_login import QrLoginIdentity
 from .resource_access_token import (
     ResourceAccessToken,
     ResourceAccessTokenRelation,
@@ -392,6 +393,7 @@ __all__ = [
     "ProviderOrder",
     "ProviderQuotaType",
     "ProviderType",
+    "QrLoginIdentity",
     "RecommendedApp",
     "ResourceAccessToken",
     "ResourceAccessTokenRelation",

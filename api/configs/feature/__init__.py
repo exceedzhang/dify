@@ -68,6 +68,21 @@ class SecurityConfig(BaseSettings):
         default=60,
     )
 
+    WEB_QR_LOGIN_TICKET_TTL_SECONDS: PositiveInt = Field(
+        description="Time window in seconds before a QR login ticket expires",
+        default=120,
+    )
+
+    WEB_QR_LOGIN_ISSUE_RATE_LIMIT_MAX_ATTEMPTS: PositiveInt = Field(
+        description="Maximum number of QR login ticket issuances per IP within the rate limit window",
+        default=10,
+    )
+
+    WEB_QR_LOGIN_ISSUE_RATE_LIMIT_WINDOW_SECONDS: PositiveInt = Field(
+        description="Time window in seconds for QR login ticket issue rate limiting",
+        default=60,
+    )
+
     LOGIN_DISABLED: bool = Field(
         description="Whether to disable login checks",
         default=False,
