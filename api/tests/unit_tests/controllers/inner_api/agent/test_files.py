@@ -15,7 +15,6 @@ from controllers.inner_api.agent.files import (
 from core.workflow.file_reference import build_file_reference
 from models.account import Account, Tenant
 from services.file_request_service import DownloadFileRequestResult
-from tests.helpers.unit.config_override import apply_config_overrides
 from tests.helpers.unit.model_factories import make_tenant
 
 MODULE = "controllers.inner_api.agent.files"
@@ -124,9 +123,9 @@ def test_download_request_returns_origin_free_uri_for_sandbox(app: Flask, unboun
     )
 
 
-def test_download_request_binds_frontend_url(
-    app: Flask, monkeypatch: pytest.MonkeyPatch, unbound_session: Session
-) -> None:
+def test_download_request_returns_origin_free_uri_for_frontend(app: Flask, unbound_session: Session) -> None:
+    """Frontend-facing URLs stay origin-free so the web front end can resolve
+    them against its own origin (user-reachable even when FILES_URL is internal)."""
     reference = build_file_reference(record_id="tool-file-1")
     payload = {
         "tenant_id": "tenant-1",
@@ -136,7 +135,6 @@ def test_download_request_binds_frontend_url(
         "file": {"transfer_method": "tool_file", "reference": reference},
         "for_frontend": True,
     }
-    apply_config_overrides(monkeypatch, FILES_URL="https://files.example.com")
     session = unbound_session
     with app.test_request_context("/", method="POST", json=payload):
         with (
@@ -154,4 +152,4 @@ def test_download_request_binds_frontend_url(
             )
             response = _raw(AgentFileDownloadRequestApi.post)(AgentFileDownloadRequestApi(), session)
 
-    assert response["download_uri"] == "https://files.example.com/files/tools/tool-file-1.pdf?sign=1"
+    assert response["download_uri"] == "/files/tools/tool-file-1.pdf?sign=1"

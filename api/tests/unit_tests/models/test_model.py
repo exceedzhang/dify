@@ -2340,6 +2340,26 @@ class TestModelCases:
         assert out == original
 
     @staticmethod
+    def test_tool_file_re_signed_origin_free() -> None:
+        """
+        Tool file URLs are re-signed origin-free (relative /files/tools/...):
+        the rendered answer must not depend on FILES_URL pointing at a
+        user-reachable host (e.g. an internal Docker API address).
+        """
+        url = "http://internal.docker.host:5001/files/tools/tf-123.png?timestamp=111&nonce=222&sign=333"
+        msg = Message(answer=_wrap_md(url))
+
+        out = msg.re_sign_file_url_answer
+
+        assert url not in out
+        assert "internal.docker.host" not in out
+        # Re-signed URL keeps the tool file id + extension, is relative, and
+        # carries a fresh signature.
+        assert "/files/tools/tf-123.png?timestamp=" in out
+        assert "&nonce=" in out
+        assert "&sign=" in out
+
+    @staticmethod
     def test_image_preview_valid_replaced() -> None:
         """
         Valid image-preview URL must be re-signed.

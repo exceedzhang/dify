@@ -21,9 +21,8 @@ from sqlalchemy.orm import Mapped, Session, mapped_column, relationship, scoped_
 
 from configs import dify_config
 from constants import DEFAULT_FILE_NUMBER_LIMITS
-from core.tools.signature import sign_tool_file
+from core.tools.signature import sign_tool_file_uri
 from extensions.storage.storage_type import StorageType
-from factories.file_url_factory import re_sign_file_urls
 from graphon.enums import WorkflowExecutionStatus
 from graphon.file import FILE_MODEL_IDENTITY, File, FileTransferMethod, FileType
 from graphon.file import helpers as file_helpers
@@ -1660,7 +1659,13 @@ class Message(TypeBase):
                 if not tool_file_id:
                     continue
 
-                sign_url = sign_tool_file(tool_file_id=tool_file_id, extension=extension)
+                # Re-sign origin-free (relative /files/... URL): this answer is
+                # rendered by the web front end, which is served from the same
+                # origin as the API file routes, so the URL resolves to the app's
+                # own origin — user-reachable even when FILES_URL points at an
+                # internal address (e.g. Docker deployments where the API port
+                # is not exposed).
+                sign_url = sign_tool_file_uri(tool_file_id=tool_file_id, extension=extension)
             elif "file-preview" in url:
                 # get upload file id
                 upload_file_id_pattern = r"\/files\/([\w-]+)\/file-preview\?timestamp="

@@ -8,7 +8,6 @@ from flask_restx import Resource
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.orm import Session
 
-from configs import dify_config
 from controllers.common.schema import register_response_schema_models, register_schema_models
 from controllers.common.session import with_session
 from controllers.console.wraps import setup_required
@@ -16,7 +15,7 @@ from controllers.inner_api import inner_api_ns
 from controllers.inner_api.plugin.wraps import get_user
 from controllers.inner_api.wraps import plugin_inner_api_only
 from core.plugin.entities.request import RequestDownloadFileMapping, RequestRequestUploadFile
-from core.tools.signature import bind_file_uri, get_signed_file_uri_for_plugin
+from core.tools.signature import get_signed_file_uri_for_plugin
 from extensions.ext_application_services import application_services
 from fields.base import ResponseModel
 from libs.exception import BaseHTTPException
@@ -185,9 +184,13 @@ class AgentFileDownloadRequestApi(Resource):
                 status_code=404,
             ) from exc
 
+        # Frontend-facing URLs are intentionally origin-free: the web front end
+        # resolves them against its own origin (same host as the API file routes),
+        # which keeps them user-reachable even when FILES_URL points at an
+        # internal address (e.g. Docker deployments where the API port is not
+        # exposed). The sandbox byte-transfer path (for_frontend=False) is
+        # unchanged and stays bound to the sandbox files base URL upstream.
         download_uri = result.download_uri
-        if payload.for_frontend:
-            download_uri = bind_file_uri(download_uri, dify_config.FILES_URL)
 
         return AgentFileDownloadRequestResponse(
             filename=result.filename,
