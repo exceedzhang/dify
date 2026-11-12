@@ -36,11 +36,14 @@ from core.app.apps.agent_app.runtime_request_builder import (
 from core.app.entities.app_invoke_entities import DifyRunContext, InvokeFrom, UserFrom
 from core.ops.base_trace_instance import bind_application_tracing_hooks
 from core.workflow.file_reference import build_file_reference
-from core.workflow.nodes.agent_v2.dify_tools_builder import WorkflowAgentDifyToolsBuilder
+from core.workflow.nodes.agent_v2.dify_tools_builder import (
+    WorkflowAgentDifyToolsBuilder,
+    WorkflowAgentToolLayers,
+)
 from graphon.file import File, FileTransferMethod, FileType
 from graphon.model_runtime.entities.message_entities import ImagePromptMessageContent
 from graphon.model_runtime.entities.model_entities import ModelFeature
-from models.agent_config_entities import AgentSoulConfig
+from models.agent_config_entities import AgentHumanToolConfig, AgentSoulConfig
 from services.tracing.runtime_bridge import RuntimeApplicationTracingHooks
 from tests.helpers.unit.config_override import apply_config_overrides
 from tests.helpers.unit.knowledge_fs_core_fakes import RecordingModelFactory, llm_schema
@@ -1063,3 +1066,61 @@ class TestAgentAppConfigLayer:
             "mention_target_missing",
             "mention_target_missing",
         ]
+
+
+class _HumanToolsCoreLayerBuilder:
+    """Core-layer fake returning a real dataclass so append_human_tools can replace it."""
+
+    def build_layers(self, **kwargs):
+        del kwargs
+        return WorkflowAgentToolLayers(
+            plugin_tools=None,
+            core_tools=DifyCoreToolsLayerConfig(
+                tools=[
+                    DifyCoreToolConfig(
+                        provider_type="builtin",
+                        provider_id="audio",
+                        tool_name="transcribe",
+                        name="transcribe",
+                        description="Transcribe audio.",
+                    )
+                ]
+            ),
+        )
+
+
+def _build_core_tool_names(soul: AgentSoulConfig) -> list[str]:
+    builder = AgentAppRuntimeRequestBuilder(
+        dify_tools_builder=_HumanToolsCoreLayerBuilder(),  # type: ignore[arg-type]
+    )
+    result = builder.build(_ctx(soul))
+    layer = next(item for item in result.request.composition.layers if item.name == DIFY_CORE_TOOLS_LAYER_ID)
+    return [tool.tool_name for tool in DifyCoreToolsLayerConfig.model_validate(layer.config).tools]
+
+
+def test_build_declares_ask_human_core_tool_when_human_tool_enabled() -> None:
+    soul = _soul_with_model()
+    soul.human.tools = [AgentHumanToolConfig(enabled=True, name="ask_human", description="Ask the human.")]
+
+    builder = AgentAppRuntimeRequestBuilder(
+        dify_tools_builder=_HumanToolsCoreLayerBuilder(),  # type: ignore[arg-type]
+    )
+    result = builder.build(_ctx(soul))
+    layer = next(item for item in result.request.composition.layers if item.name == DIFY_CORE_TOOLS_LAYER_ID)
+    core = DifyCoreToolsLayerConfig.model_validate(layer.config)
+
+    assert [tool.tool_name for tool in core.tools] == ["transcribe", "ask_human"]
+    ask = core.tools[1]
+    assert ask.provider_type == "builtin"
+    assert ask.provider_id == "dify"
+    assert ask.name == "ask_human"
+    assert ask.parameters_json_schema["required"] == ["question"]
+    assert "question" in ask.parameters_json_schema["properties"]
+
+
+def test_build_keeps_core_tools_unchanged_when_ask_human_disabled_or_absent() -> None:
+    disabled_soul = _soul_with_model()
+    disabled_soul.human.tools = [AgentHumanToolConfig(enabled=False, name="ask_human")]
+    assert _build_core_tool_names(disabled_soul) == ["transcribe"]
+
+    assert _build_core_tool_names(_soul_with_model()) == ["transcribe"]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Final, Literal, Protocol
 
 from dify_agent.layers.dify_core_tools import DifyCoreToolConfig, DifyCoreToolProviderType, DifyCoreToolsLayerConfig
@@ -26,7 +26,12 @@ from core.tools.plugin_tool.tool import PluginTool
 from core.tools.tool_manager import ToolManager
 from core.tools.workflow_as_tool.provider import WorkflowToolProviderController
 from extensions.ext_database import db
-from models.agent_config_entities import AgentKnowledgeSpaceConfig, AgentSoulDifyToolConfig, AgentSoulToolsConfig
+from models.agent_config_entities import (
+    AgentKnowledgeSpaceConfig,
+    AgentSoulDifyToolConfig,
+    AgentSoulHumanConfig,
+    AgentSoulToolsConfig,
+)
 from models.provider_ids import ToolProviderID
 from models.tools import WorkflowToolProvider
 from services.tools.mcp_tools_manage_service import MCPToolManageService
@@ -87,6 +92,63 @@ class WorkflowAgentToolLayers:
         if self.core_tools is not None:
             names.extend(tool.name or tool.tool_name for tool in self.core_tools.tools)
         return names
+
+
+ASK_HUMAN_TOOL_NAME: Final = "ask_human"
+ASK_HUMAN_PROVIDER_ID: Final = "dify"
+
+
+def build_ask_human_tool_config() -> DifyCoreToolConfig:
+    """Declaration of the API-owned ``dify.ask_human`` human-in-the-loop tool.
+
+    The tool has no entry in the tool registry: it is API-routed like the other
+    core tools, and ``AgentToolInnerService`` special-cases its invocation.
+    """
+    return DifyCoreToolConfig(
+        provider_type="builtin",
+        provider_id=ASK_HUMAN_PROVIDER_ID,
+        tool_name=ASK_HUMAN_TOOL_NAME,
+        name=ASK_HUMAN_TOOL_NAME,
+        description=(
+            "Ask a human to confirm or provide input (for example: scan a QR code with their phone) "
+            "and wait for their reply in the conversation. Use this instead of guessing or polling. "
+            "The call returns as soon as the question is delivered; end your turn right after it and "
+            "treat the human's next message as the answer."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The question or confirmation request shown to the human.",
+                },
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": 'Optional short reply choices (for example ["已扫码", "取消"]).',
+                },
+            },
+            "required": ["question"],
+        },
+    )
+
+
+def append_human_tools(
+    layers: WorkflowAgentToolLayers,
+    human: AgentSoulHumanConfig | None,
+) -> WorkflowAgentToolLayers:
+    """Declare enabled ``ask_human`` entries from ``agent_soul.human`` as core tools.
+
+    Returns the input unchanged when no human tool is configured or enabled, so
+    existing runs without human config are byte-identical.
+    """
+    if human is None or not any(tool.enabled and tool.name == ASK_HUMAN_TOOL_NAME for tool in human.tools):
+        return layers
+    core = layers.core_tools or DifyCoreToolsLayerConfig()
+    core.tools = [tool for tool in core.tools if tool.tool_name != ASK_HUMAN_TOOL_NAME] + [
+        build_ask_human_tool_config()
+    ]
+    return replace(layers, core_tools=core)
 
 
 class WorkflowAgentDifyToolLayersBuilder(Protocol):

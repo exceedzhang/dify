@@ -90,6 +90,7 @@ from .dify_tools_builder import (
     WorkflowAgentDifyToolsBuilder,
     WorkflowAgentDifyToolsBuildError,
     WorkflowAgentToolLayers,
+    append_human_tools,
 )
 from .output_failure_orchestrator import retry_idempotency_key
 from .runtime_feature_manifest import build_runtime_feature_manifest
@@ -198,6 +199,9 @@ class WorkflowAgentRuntimeRequestBuilder:
             )
         except WorkflowAgentDifyToolsBuildError as error:
             raise WorkflowAgentRuntimeRequestBuildError(error.error_code, str(error)) from error
+        # `agent_soul.human.tools` is API-owned (no registry provider): declare any
+        # enabled ask_human entry as a core tool so the agent runtime can call it.
+        tool_layers = append_human_tools(tool_layers, human=agent_soul.human)
         if tool_layers.plugin_tools is not None or tool_layers.core_tools is not None or agent_soul.tools.cli_tools:
             metadata["agent_tools"] = {
                 "dify_tool_count": len(tool_layers.exposed_tool_names()),

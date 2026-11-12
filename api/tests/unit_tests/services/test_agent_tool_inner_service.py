@@ -203,3 +203,64 @@ def test_invoke_maps_runtime_lookup_errors_to_service_error_codes(
             AgentToolInnerService().invoke(_request(), session=sqlite_session)
 
     assert exc_info.value.error_code == expected_code
+
+
+def _ask_human_request(tool_parameters: dict) -> AgentToolInvokeRequest:
+    return AgentToolInvokeRequest.model_validate(
+        {
+            "caller": {
+                "tenant_id": "tenant-1",
+                "user_id": "user-1",
+                "user_from": "account",
+                "app_id": "app-1",
+                "invoke_from": "web-app",
+                "conversation_id": "conversation-1",
+            },
+            "tool": {
+                "provider_type": "builtin",
+                "provider_id": "dify",
+                "tool_name": "ask_human",
+                "tool_parameters": tool_parameters,
+            },
+        }
+    )
+
+
+def test_invoke_ask_human_returns_wait_for_reply_observation(sqlite_session: Session) -> None:
+    _persist_app(sqlite_session)
+    request = _ask_human_request({"question": "你扫完码了吗？", "options": ["已扫码", "取消"]})
+
+    with patch("services.agent_tool_inner_service.ToolManager.get_agent_tool_runtime") as mock_get_runtime:
+        response = AgentToolInnerService().invoke(request, session=sqlite_session)
+
+    # The API-owned ask_human tool must not be resolved through the tool registry.
+    mock_get_runtime.assert_not_called()
+    assert "wait for the human's reply" in response.observation
+    assert response.messages == []
+    assert response.metadata == {
+        "provider_type": "builtin",
+        "provider_id": "dify",
+        "tool_name": "ask_human",
+    }
+
+
+@pytest.mark.parametrize(
+    "tool_parameters",
+    [
+        {},
+        {"question": "   "},
+        {"question": 123},
+        {"question": "ok", "options": "not-a-list"},
+        {"question": "ok", "options": ["a", 2]},
+    ],
+)
+def test_invoke_ask_human_rejects_invalid_parameters(sqlite_session: Session, tool_parameters: dict) -> None:
+    _persist_app(sqlite_session)
+    request = _ask_human_request(tool_parameters)
+
+    with patch("services.agent_tool_inner_service.ToolManager.get_agent_tool_runtime") as mock_get_runtime:
+        with pytest.raises(AgentToolInnerServiceError) as exc_info:
+            AgentToolInnerService().invoke(request, session=sqlite_session)
+
+    assert exc_info.value.error_code == "tool_parameters_invalid"
+    mock_get_runtime.assert_not_called()

@@ -35,7 +35,11 @@ from core.tools.tool_manager import ToolManager
 from core.tools.utils.message_transformer import ToolFileMessageTransformer
 from models.model import App
 from services.credentials.refresh import CredentialRefreshUnavailableError
-from services.entities.agent_tool_inner import AgentToolInvokeRequest, AgentToolInvokeResponse
+from services.entities.agent_tool_inner import (
+    AgentToolInvokeRequest,
+    AgentToolInvokeResponse,
+    AgentToolInvokeTarget,
+)
 from services.errors.agent_tool_inner import AgentToolInnerServiceError
 from services.workflow_run_agg import WorkflowRunAgg
 
@@ -57,6 +61,9 @@ class AgentToolInnerService:
                 description="App does not belong to the caller tenant.",
                 status_code=403,
             )
+
+        if _is_ask_human_tool(request.tool):
+            return _invoke_ask_human(request)
 
         agent_tool = AgentToolEntity(
             provider_type=ToolProviderType.value_of(request.tool.provider_type),
@@ -165,4 +172,43 @@ def _map_value_error(error: ValueError) -> AgentToolInnerServiceError:
         error_code="agent_tool_invoke_failed",
         description=description,
         status_code=422,
+    )
+
+
+def _is_ask_human_tool(target: AgentToolInvokeTarget) -> bool:
+    return target.provider_type == "builtin" and target.provider_id == "dify" and target.tool_name == "ask_human"
+
+
+def _invoke_ask_human(request: AgentToolInvokeRequest) -> AgentToolInvokeResponse:
+    """Serve the API-owned ``dify.ask_human`` human-in-the-loop tool.
+
+    The tool declares that the agent asked a human a question (for example:
+    scan a QR code with their phone) and the turn ends to wait for the human's
+    reply in the conversation. The reply arrives as the next user turn, which
+    the agent runtime natively repairs into the pending tool result, so no
+    blocking wait or form round-trip is needed here.
+    """
+    parameters = request.tool.tool_parameters
+    question = parameters.get("question")
+    if not isinstance(question, str) or not question.strip():
+        raise AgentToolInnerServiceError(
+            error_code="tool_parameters_invalid",
+            description="ask_human requires a non-empty string 'question' parameter.",
+            status_code=422,
+        )
+    options = parameters.get("options")
+    if options is not None and not (isinstance(options, list) and all(isinstance(item, str) for item in options)):
+        raise AgentToolInnerServiceError(
+            error_code="tool_parameters_invalid",
+            description="ask_human 'options' must be a list of strings.",
+            status_code=422,
+        )
+    return AgentToolInvokeResponse(
+        messages=[],
+        observation=(
+            "The question was delivered to the human. This turn will now end and wait for the "
+            "human's reply in the next message. Treat the human's next message as the answer to "
+            "this question; do not re-ask it and do not poll."
+        ),
+        metadata={"provider_type": "builtin", "provider_id": "dify", "tool_name": "ask_human"},
     )
