@@ -68,6 +68,14 @@ RUN apt-get update \
 
 RUN python -m pip install --no-cache-dir "uv==${UV_VERSION}"
 
+# Python libraries used by bundled agent skills (e.g. bili-qr-login:
+# CDP + bilibili passport QR login scripts). Installed at build time so
+# `python3` in the sandbox can import them without runtime pip work.
+RUN python -m pip install --no-cache-dir \
+    "websocket-client>=1.6" \
+    "qrcode>=7.4" \
+    "pillow>=10.0"
+
 # Go binaries
 COPY --from=go-builder /bin/shellctl /usr/local/bin/shellctl
 COPY --from=go-builder /bin/shellctl-sanitize-pty /usr/local/bin/shellctl-sanitize-pty
