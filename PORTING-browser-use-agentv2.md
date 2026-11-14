@@ -315,3 +315,43 @@ llm=ResilientPydanticAIChatModel(EmptyResponseRetryModel(cast(Model, ctx.model))
 - `docker/sync-e2b-template.sh`(`DEFAULT_MEMORY_MB` 2048)
 
 **docker**:`docker-compose.yaml` **无需改动**(local_sandbox 与 agent_backend 已在 `agent_sandbox_network`,squid 代理 env 已设)。
+
+## 10. browser-use 1.x 升级跟踪(2026-11-14 建立)
+
+**结论:不升级,维持当前基线**(browser-use 0.13.9 + harness 0.20.x + pydantic-ai-slim 2.53.0)。
+
+### 10.1 为什么不能原地升级
+
+1. **引擎替换而非版本迭代**:browser-use 1.0.0(2026-11-10 发布)删除 80% 代码(68,815→13,154 行),
+   不再做 DOM 序列化 / action schema;子代理改在持久 REPL 中写 Python 直接操作 raw CDP
+   (新增 `browser-harness==0.1.13` 包:cdp-use/fetch-use/websockets)。0.x 线停在 0.13.14,
+   而 0.13.10–0.13.14 硬钉 `pydantic==2.13.5`,0.x 内也无升级空间。
+2. **上游 harness 无兼容发布**:截至 2026-11-14,`pydantic-ai-harness` 全部发布(最新 0.68.0,2026-11-12)
+   的 `browser-use` extra 仍钉 `browser-use<0.14,>=0.13.6`,1.x 不可解析。解包 0.66.0 核实:`pydantic_ai_harness.browser_use`
+   模块运行时依赖 0.x 内部件(`browser_use.browser.profile.DOMAIN_OPTIMIZATION_THRESHOLD`、
+   `Tools(exclude_actions=...)`、直接构造 `browser_use.Agent`),1.0 中均已移除——即使放开版本上限也是运行时必炸。
+3. **硬钉迫使框架级迁移**:1.0.2–1.0.4 硬钉 `pydantic-ai-slim[anthropic,google,openai]==2.66.0`(本基座 `==2.53.0`,
+   需全 dify-agent 运行时升级 13 个 minor)、`pydantic==2.14.3`(本基座 `<2.13`)、`pillow==12.3.0`
+   (仍需保留 pillow≥13 override)。`google-genai==2.34.0` 恰与当前 lock 一致。
+4. **架构不匹配**:1.0 默认值翻转为 Browser Use **云浏览器** + 网关模型 `bu-fast`(需 `BROWSER_USE_API_KEY`)。
+   要保住本仓库契约(sandbox 本地 Chromium + 宿主模型、密钥不出 backend)必须显式 `Browser('chromium')` + 宿主模型;
+   且 `max_steps` 默认 500→100、新增 `timeout=1700s`,`resilient_model.py` 的按步重试预算设计需重新评估。
+
+### 10.2 跟踪信号(任一命中即启动 §10.3)
+
+1. PyPI `pydantic-ai-harness` 新发布中 `browser-use` extra 由 `<0.14` 变为 `>=1.0`;
+2. pydantic-ai GitHub release notes 出现 "browser-use 1.x" 字样;
+3. pydantic-ai 仓库出现 browser-use 1.x 相关 PR(2026-11-14 搜索 issue/PR 结果为 0)。
+
+基线快照(下次对照):harness 0.68.0(2026-11-12,extra `<0.14`)/ browser-use 1.0.4(2026-11-13,
+依赖画像同 1.0.2)/ pydantic-ai releases 最新 v2.68.0(无 1.x 条目)。browser-use 侧迭代很快
+(1.0.0→1.0.4 四天),harness 侧尚无动工迹象,预计短期(数周)内无 1.x 支持版。
+
+### 10.3 迁移计划(信号命中后执行,非版本 bump)
+
+- P0:等出支持 browser-use 1.x 的 pydantic-ai-harness 发布;
+- P1:base 迁移——pydantic-ai-slim 2.53.0 → 该 harness 发布硬钉的版本(如 0.66.0→2.66.0)+
+  pydantic 2.12.5 → 2.14.3,全量 re-lock(`make test`/`typecheck`/镜像回归,pillow override 保留);
+- P2:browser layer 契约重验证——新引擎下 `get_instructions()`/`get_toolset()`/重试模型/CDP 接线,
+  显式 `Browser('chromium')` + 宿主模型,确认"密钥不出 backend"不变形;
+- P3:镜像 + compose 端到端验证。
